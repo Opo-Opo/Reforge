@@ -20,7 +20,7 @@ Put the pieces you want upgraded in your inventory, stand by the NPC and `//frg 
 | Monisette | Port Jeuno | Old sets → iL109, iL109 → +1 |
 | Coelestrox | Reisenjima | Artifact +1 → +2, +2 → +3 (the +3 takes two trades, a day apart) |
 | Aurix ("???") | Ru'Lude Gardens | Relic +1 → +2, +2 → +3 |
-| Ruspix | Leafallia | Empyrean +1 → +2, +2 → +3 (see Things to know) |
+| Ruspix | Leafallia | Empyrean +1 → +2, +2 → +3 |
 
 | Command | What it does |
 |---|---|
@@ -57,4 +57,3 @@ Reforge always waits out the day. It never picks the option that spends beads to
 ## Things to know
 
 - **It stops if anything looks wrong:** Reforge only carries on when the NPC replies the way it expects: its menu names a piece of equipment (Ruspix's never say what he'll give back) and Coelestrox asks the normal bead fee. If anything else happens, it tells you in chat and stops without trading anything more. If the NPC's window is left stuck on screen, zoning clears it. What happened is saved in `data/menus.log`. A game update can cause this. If it does, opening an issue with what's in that file helps get it working again.
-- **Ruspix can be mistaken for busy:** Reforge can't yet always tell whether Ruspix is still working on a piece. Sometimes it says "Ruspix has your piece" when he doesn't, and then waits for nothing. If that happens, `//frg stop`, trade the piece to him yourself, and `//frg start` after the day change to collect it. Trading and collecting both work.

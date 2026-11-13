@@ -66,11 +66,14 @@ Aurix's menus (2026-10-28, Bagua Mitaines +1 -> +2). He is a "???", so he is fou
 
 Ruspix's menus (2026-10-29, Locke's Chass. Tricorne +1 -> +2). None of them names the result.
   71 talked to when he has nothing finished: "Care to browse my special list?". Param 1 is your Gallimaufry.
-     Byte 31 is 2 while he works on a piece and 6 when he holds nothing (one log each, so a guess that holds
-     so far). Option 0 is "Leaving for now" (and Escape).
+     It is the same whether he is working on a piece or holds nothing (byte 31 flips between 2 and 6 in all his
+     menus, for something else), so Reforge just trades the next piece. Option 0 is "Leaving for now" (and Escape).
   74 after a trade. Param 1 is the piece traded (not the result). No choice; the muffins are taken. Ended with 0.
+  76 after a trade while he is working on a piece (2026-11-13, Terra's Bhikku Hose +1 traded a few seconds after
+     the Cyclas +1): turned down, the items stay with you. Param 1 was 15. Ended with 0.
   75 talked to after the day change: "The equipment you ordered is ready!". Param 1 was 281, not an item.
-     Option 0 takes it; Reforge then checks the result arrived.
+     Option 0 takes it; Reforge then checks the result arrived. It is also his reply to a trade while a piece is
+     finished (2026-11-13, param 1 was 3): the trade is ignored, the traded items stay, and option 0 takes the piece.
   Empyrean +2 -> +3 (Ra'Kaz. Starstone + 70000 Gallimaufry) is assumed to use the same menus; turned on at the
   user's request before one was logged.
   Relic +2 -> +3 uses the same menus, it is assumed (turned on at the user's request before one was logged).
@@ -109,9 +112,8 @@ local M_OPTION = 0 -- every Monisette conversation Reforge answers ends with 0
 local A_ASK, A_TRADE, A_COLLECT = 3007, 3005, 3006
 local A_OPTION = 0 -- "Never mind", and how his trade and collect conversations end
 -- Ruspix
-local R_ASK, R_TRADE, R_COLLECT = 71, 74, 75
+local R_ASK, R_TRADE, R_COLLECT, R_BUSY = 71, 74, 75, 76
 local R_OPTION = 0 -- "Leaving for now", and how his trade and collect conversations end
-local R_IDLE, R_BUSY = 6, 2 -- byte 31 of menu 71
 
 -- Menu 29's 6th param looked like the slot (body 1, feet 4). Unconfirmed; only used to name a piece.
 local PROBE_SLOT = {[0] = 'head', [1] = 'body', [2] = 'hands', [3] = 'legs', [4] = 'feet'}
@@ -595,16 +597,34 @@ function M.go()
     running = false
 end
 
--- The NPC holds nothing of yours: trade the next piece for them, or finish
-local function next_piece(npc, mob)
-    traded_to[npc] = nil
+-- The NPC is working on a piece that isn't ready
+local function holds_unfinished(npc, what)
+    local known = traded_to[npc]
+    local name = known and piece_name(known) or what
+    if new_day then
+        -- the day has changed by our clock, but not theirs yet
+        say(string.format('Reforge: %s says %s is not ready yet. Asking again in a minute.', npc, name))
+        coroutine.schedule(function() M.go() end, RETRY_DELAY)
+    else
+        say(string.format('Reforge: %s has %s; next step after the day change, in about %d min.',
+            npc, name, minutes_to_day()), ctx.GREEN)
+    end
+end
+
+-- The NPC holds nothing of yours: trade the next piece for them, or finish.
+-- unsure: the NPC's menu can't say whether they hold a piece (Ruspix), so what Reforge last traded them is kept;
+-- a trade they turn down says they do.
+local function next_piece(npc, mob, unsure)
+    local known = traded_to[npc]
+    if not unsure then traded_to[npc] = nil end
     for _, e in ipairs(candidates()) do
         if e.npc == npc and ready_to_go(e) then return trade(e, stages(e)[1], mob) end
     end
+    if unsure and known then return holds_unfinished(npc, 'your piece') end
     running = false
     if finished > 0 then return say('Reforge: all done, nothing left to upgrade here. Stopped.', ctx.GREEN) end
     say('Reforge: nothing to upgrade here: no piece in inventory with all its materials for ' .. npc
-        .. ', and ' .. npc .. ' has nothing of yours.')
+        .. (unsure and '.' or (', and ' .. npc .. ' has nothing of yours.')))
 end
 
 -- What //frg start shows: what can be done here, and what can't and why
@@ -647,20 +667,6 @@ function M.start(tales)
 end
 
 ---------------------------------------------------------------- what the NPC said
-
--- The NPC is working on a piece that isn't ready
-local function holds_unfinished(npc, what)
-    local known = traded_to[npc]
-    local name = known and piece_name(known) or what
-    if new_day then
-        -- the day has changed by our clock, but not theirs yet
-        say(string.format('Reforge: %s says %s is not ready yet. Asking again in a minute.', npc, name))
-        coroutine.schedule(function() M.go() end, RETRY_DELAY)
-    else
-        say(string.format('Reforge: %s has %s; next step after the day change, in about %d min.',
-            npc, name, minutes_to_day()), ctx.GREEN)
-    end
-end
 
 -- The NPC handed over a finished piece; carry on with whatever is next
 local function collected(npc, result)
@@ -827,8 +833,17 @@ end
 -- Ruspix: picks the answer to his menu, or nil and why it won't answer. His menus never name the result.
 local function decide_ruspix(t, menu, params)
     local e = t.entry
+    if menu == R_COLLECT then
+        -- also his reply to a trade when a piece is finished: the trade is ignored and the piece handed over,
+        -- so the next talk shows menu 71 and the ignored piece is traded then
+        local known = traded_to.Ruspix
+        return {option = R_OPTION, after = function() collected('Ruspix', known and known.result) end}
+    end
     if t.kind == 'trade' then
-        if menu ~= R_TRADE then
+        if menu == R_BUSY then
+            -- he turned the trade down: he is working on a piece, and the traded items stay with you
+            return {option = R_OPTION, after = function() holds_unfinished('Ruspix', 'your piece') end}
+        elseif menu ~= R_TRADE then
             return nil, string.format('Ruspix replied with menu %d naming %s; expected menu %d.',
                 menu, item_name(param(params, 1)), R_TRADE)
         end
@@ -838,18 +853,11 @@ local function decide_ruspix(t, menu, params)
         end})
     end
 
-    -- asking what he holds
-    local flag = params:byte(31)
-    if menu == R_ASK and flag == R_IDLE then
-        return {option = R_OPTION, after = function() next_piece('Ruspix', t.mob) end}
-    elseif menu == R_ASK and flag == R_BUSY then
-        return {option = R_OPTION, after = function() holds_unfinished('Ruspix', 'your piece') end}
-    elseif menu == R_COLLECT then
-        local known = traded_to.Ruspix
-        return {option = R_OPTION, after = function() collected('Ruspix', known and known.result) end}
+    -- asking what he holds: menu 71 looks the same whether he is working on a piece or not
+    if menu == R_ASK then
+        return {option = R_OPTION, after = function() next_piece('Ruspix', t.mob, true) end}
     end
-    return nil, string.format('Ruspix showed menu %d (flag %s), which Reforge does not know.',
-        menu, tostring(flag))
+    return nil, string.format('Ruspix showed menu %d, which Reforge does not know.', menu)
 end
 
 local DECIDE = {Coelestrox = decide_coelestrox, Monisette = decide_monisette, Aurix = decide_aurix, Ruspix = decide_ruspix}

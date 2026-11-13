@@ -33,7 +33,7 @@ anything done by hand is noticed the next time it asks.
 
 _addon.name = 'Reforge'
 _addon.author = 'Opo-Opo'
-_addon.version = '0.3.0'
+_addon.version = '0.3.1'
 _addon.commands = {'reforge', 'frg', 'forge'}
 
 local res = require('resources')
